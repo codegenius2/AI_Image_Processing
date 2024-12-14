@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPixmap, QDragEnterEvent, QDropEvent
 from PyQt5.QtCore import Qt, QMimeData
 from PIL import Image, ImageEnhance
+from image_processing import ImageProcessing
 
 class ImageApp(QWidget):
     def __init__(self):
@@ -40,7 +41,7 @@ class ImageApp(QWidget):
 
         self.countselect = 0 
 
-        for option in options:
+        for index, option in enumerate(options, 1):
             button = QPushButton(option)
             button.setStyleSheet("""
                 font-size: 16px;
@@ -50,14 +51,15 @@ class ImageApp(QWidget):
                 margin-right: 20px;
             """)
 
-            if option == "①全体の露出補正":
-                button.clicked.connect(self.toggle_select_deselect)
+            # if option == "①全体の露出補正":
+            #     button.clicked.connect(self.toggle_select_deselect)
+
 
             # elif option == "②手前と奥の露出統一":
             #     button.clicked.connect(self.unify_exposure)  # Connect to the specific handler
             # elif option == "③色補正":
             #     button.clicked.connect(self.color_correction)  # Connect to the specific handler
-
+            button.clicked.connect(lambda _, i=index: self.handle_correction(i))
             first_row_layout.addWidget(button)
             first_row_layout.setStretch(first_row_layout.indexOf(button), 1)
 
@@ -66,7 +68,7 @@ class ImageApp(QWidget):
         second_row_layout = QHBoxLayout()
         options = ["④水平補正(人物を切らない)", "⑤水平補正(人物を切る)", "⑥トリミング"]
 
-        for option in options:
+        for index, option in enumerate(options, 4):
             button = QPushButton(option)
             button.setStyleSheet("""
                 font-size: 16px;
@@ -75,6 +77,7 @@ class ImageApp(QWidget):
                 margin: 2px;                  /* Margin around the button */
                 margin-right: 20px;
             """)
+            button.clicked.connect(lambda _, i=index: self.handle_correction(i))
             # button.clicked.connect(self.handle_second_row_buttons)  # Connect to handler
             second_row_layout.addWidget(button)
             second_row_layout.setStretch(second_row_layout.indexOf(button), 1)
@@ -85,7 +88,7 @@ class ImageApp(QWidget):
         options = ["⑦ブレ、ピンボケ", "⑧目瞑り", "⑨顔の重なり", "⑩類似写真"]
         
 
-        for option in options:
+        for index, option in enumerate(options, 7):
             button = QPushButton(option)
             button.setStyleSheet("""
                 font-size: 16px;
@@ -97,6 +100,8 @@ class ImageApp(QWidget):
             # button.clicked.connect(self.handle_third_row_buttons)
             third_row_layout.addWidget(button)
             third_row_layout.setStretch(third_row_layout.indexOf(button), 1)
+            button.clicked.connect(lambda _, i=index: self.handle_correction(i))
+
         main_button_layout.addLayout(third_row_layout)
 
         forth_row_layout = QHBoxLayout() 
@@ -148,6 +153,12 @@ class ImageApp(QWidget):
 
             self.display_thumbnail(image_path, row, col)
 
+    def update_thumbnail(self, processed_path, original_path):
+        for frame, image_path in self.thumbnails:
+            if image_path == original_path:
+                pixmap = QPixmap(processed_path).scaled(380, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                frame.findChild(QLabel).setPixmap(pixmap)  
+
     def display_thumbnail(self, image_path, row, col):
         frame = QFrame()
         frame.setFixedSize(400, 450)
@@ -191,7 +202,6 @@ class ImageApp(QWidget):
             label.setStyleSheet("margin:3.4px; padding:2px; font-size:15px; border:none;")
             number_layout.addWidget(label)
 
-        # Arrange the layout vertically
         image_widget = QVBoxLayout()
         image_widget.setSpacing(10)
         image_widget.setContentsMargins(0, 0, 0, 0)  
@@ -249,13 +259,9 @@ class ImageApp(QWidget):
     
     def create_sliders(self):
         sliders_layout = QVBoxLayout()
-
         self.brightness_slider = self.create_slider("明るさ", sliders_layout)
-
         self.contrast_slider = self.create_slider("コントラスト", sliders_layout)
-
         self.saturation_slider = self.create_slider("色濃度", sliders_layout)
-
         self.exposure_slider = self.create_slider("色かぶり", sliders_layout)
 
         self.main_layout.addLayout(sliders_layout)
@@ -343,6 +349,75 @@ class ImageApp(QWidget):
         footer_layout.addWidget(execute_button, alignment=Qt.AlignRight)
 
         self.main_layout.addLayout(footer_layout)
+
+    def apply_correction(self, image_path, correction_type):
+        image = Image.open(image_path)
+        output_dir = os.path.join(os.path.dirname(image_path), "processed")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, os.path.basename(image_path))
+
+        if correction_type == 1:  
+            processor = ImageProcessing(image_path)
+            enhanced_image = Image.fromarray(processor.global_exposure_correction())
+        
+        elif correction_type == 2:
+            processor = ImageProcessing(image_path)
+            enhanced_image = Image.fromarray(processor.foreground_background_unification())
+        
+        elif correction_type == 3: 
+            processor = ImageProcessing(image_path)
+            enhanced_image = Image.fromarray(processor.color_correction())
+        
+        elif correction_type == 4: 
+            processor = ImageProcessing(image_path)
+            enhanced_image = Image.fromarray(processor.horizontal_correction_without_cutting_people())
+        
+        elif correction_type == 5: 
+            processor = ImageProcessing(image_path)
+            enhanced_image = Image.fromarray(processor.horizontal_correction_crop())
+        
+        elif correction_type == 6: 
+            aspect_ratio = 16 / 9
+            processor = ImageProcessing(image_path)
+            enhanced_image = Image.fromarray(processor.crop_with_aspect_ratio(aspect_ratio))
+        
+        elif correction_type == 7: 
+            processor = ImageProcessing(image_path)
+            blur_score = processor.evaluate_blur()
+            print(f"Image blur score: {blur_score}")
+            enhanced_image = image  
+        
+        elif correction_type == 8:  
+            processor = ImageProcessing(image_path)
+            if not processor.filter_closed_eyes():
+                print("Image skipped due to closed eyes.")
+            enhanced_image = image  
+        
+        elif correction_type == 9:  
+            processor = ImageProcessing(image_path)
+            overlap_score = processor.detect_face_overlap()
+            if overlap_score > 0:
+                print("Image skipped due to face overlap.")
+            enhanced_image = image  
+        
+        elif correction_type == 10: 
+            processor = ImageProcessing(image_path)
+            enhanced_image = Image.fromarray(processor.enhance_resolution_with_factor())
+        
+        else:
+            print("Unrecognized correction type. Returning original image.")
+            enhanced_image = image 
+        
+        self.update_thumbnail(output_path, image_path)
+        enhanced_image.save(output_path)
+        print(f"Processed image saved to: {output_path}")
+
+    
+    def handle_correction(self, correction_type):
+        print(f"Correction type {correction_type} selected.")
+        for container, image_path in self.thumbnails:
+            if container.findChild(QCheckBox).isChecked():
+                self.apply_correction(image_path, correction_type)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
